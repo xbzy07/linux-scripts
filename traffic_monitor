@@ -1,0 +1,101 @@
+#!/bin/bash
+##########################################################
+#2016-01-13@get network_info                             #                               #
+#by@xbzy                                                 #
+##########################################################
+set -o nounset
+set -o errexit
+
+Traffic_OK=0
+Traffic_WARNING=1
+Traffic_CRITICAL=2
+Traffic_UNKNOWN=3
+
+if [ $# -ne 4 ];then
+   echo "Usage:sh $0 -w 0.8 -c 0.9"
+   exit $Traffic_UNKNOWN
+fi
+
+Net_dev=$(ifconfig |grep -E "(eth[0-9]|em[0-9])"|awk '{print $1}')
+#Net_dev=$1
+Net_dev_num=$(ifconfig |grep -E "(eth[0-9]|em[0-9])"|awk '{print $1}'|wc -l)
+One_Net_dev=$(ifconfig |grep -E "(eth[0-9]|em[0-9])"|awk '{print $1}'|head -1)
+#Max_speed=$(ethtool $One_Net_dev|grep Speed|grep  -oE  "[0-9]+")
+Max_speed="1000"
+
+Warng_threshold=$2
+#Warng_threshold="0.8"
+Critical_threshold=$4
+#Critical_threshold="0.9"
+Warng_speed=$(echo $Max_speed | awk '{print $1*Warng_threshold*1024*1024/8}' Warng_threshold=$Warng_threshold)
+Critical_speed=$(echo $Max_speed | awk '{print $1*Critical_threshold*1024*1024/8}' Critical_threshold=$Critical_threshold)
+
+Sleep_count=2
+
+function Get_netinfo()
+{
+
+
+local net_device=$1
+#Max_speed=$(ethtool $net_device |grep Speed|grep  -oE  "[0-9]+")
+#echo  -e  "\t RX `date +%k:%M:%S` TX"
+
+Count=1
+while [ "$Count" -gt 0 ]
+do
+
+RXpre=$(cat /proc/net/dev | grep "\<$net_device\>" | tr : " " | awk '{print $2}')
+TXpre=$(cat /proc/net/dev | grep "\<$net_device\>" | tr : " " | awk '{print $10}')
+sleep ${Sleep_count}
+#set -x
+RXnext=$(cat /proc/net/dev | grep "\<$net_device\>" | tr : " " | awk '{print $2}')
+TXnext=$(cat /proc/net/dev | grep "\<$net_device\>" | tr : " " | awk '{print $10}')
+#clear
+
+#echo "$TXnext"
+#RX=$[RXnext - RXpre]
+#TX=$[TXnext - TXpre]
+RX=$((${RXnext}-${RXpre}))
+TX=$((${TXnext}-${TXpre}))
+#RX_k=$(echo ${RX} |awk '{print $1*8/2/1024/1024}')
+RX_k=$((${RX}/${Sleep_count}))
+TX_k=$((${TX}/${Sleep_count}))
+
+if [[ $RX_k -gt $Warng_speed ]] && [[ $RX_k -lt $Critical_speed ]] || [[ $TX_k -gt $Warng_speed ]] && [[ $TX_k -lt $Critical_speed ]];then
+        echo  "Traffic_WARNING $net_device : recv $(echo ${RX_k}|awk '{printf "%2.2f\n",$1/1024}')kB;send $(echo ${TX_k}|awk '{printf "%2.2f\n",$1/1024}')kB"
+        exit $Traffic_WARNING
+elif [[ $RX_k -gt $Critical_speed ]] || [[ $TX_k -gt $Critical_speed ]] ; then
+        echo  "Traffic_CRITICAL $net_device : recv $(echo ${RX_k}|awk '{printf "%2.2f\n",$1/1024}')kB;send $(echo ${TX_k}|awk '{printf "%2.2f\n",$1/1024}')kB"
+        exit $Traffic_CRITICAL
+else
+        echo  "Traffic_OK $net_device : recv $(echo ${RX_k}|awk '{printf "%2.2f\n",$1/1024}')kB;send $(echo ${TX_k}|awk '{printf "%2.2f\n",$1/1024}')kB"
+        exit  $Traffic_OK
+fi
+
+let "Count -=1"
+done
+
+}
+
+#J=0
+if [ "$1" = "-w" ] && [ $3 = "-c" ];then
+
+   if [ $Net_dev_num -eq 0 ];then
+      echo "No device found"
+      exit $Traffic_UNKNOWN
+   elif [ $Net_dev_num -eq 1 ];then
+      Get_netinfo $Net_dev
+   else
+      echo "net_device > 1"
+      exit  $Traffic_UNKNOWN
+   fi
+else
+   echo "Usage:sh $0 -w 0.8 -c 0.9"
+   exit $Traffic_UNKNOWN
+fi
+#    for i in $Net_dev
+#    do
+#       Arr_info[$J]=$(Get_netinfo $i)
+#       let "J +=1"
+#    done
+#echo "${Arr_info[@]}"|awk 'BEGIN{OFS=";"}{NF=NF;print $0}'
