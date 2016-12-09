@@ -2,7 +2,7 @@
 #######################################
 #for set hdfs quota
 #
-#2016-11-15@by xby007 in didichuxing
+#2016-11-15@by xbzy007 in didichuxing
 ######################################
 set -u
 set -e
